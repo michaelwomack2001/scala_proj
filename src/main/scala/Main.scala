@@ -1,63 +1,63 @@
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord, ProducerConfig}
+import org.apache.kafka.clients.consumer.{KafkaConsumer, ConsumerConfig, ConsumerRecords}
+import java.util.{Properties, Collections}
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.jdk.CollectionConverters._
 
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.apache.kafka.clients.consumer.{KafkaConsumer, ConsumerRecords}
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler}
-import org.apache.spark.ml.regression.LinearRegression
-import org.apache.spark.ml.Pipeline
-import java.util.{Collections,Properties}
+object Main {
 
-object KafkaScalaProducer {
   def main(args: Array[String]): Unit = {
+    val topic = "demo-topic"
+
+    val producerFuture = Future { runProducer(topic) }
+    val consumerFuture = Future { runConsumer(topic) }
+
+    producerFuture.foreach(_ => println("Producer finished"))
+    consumerFuture.foreach(_ => println("Consumer finished"))
+  }
+
+  def runProducer(topic: String): Unit = {
     val props = new Properties()
-    props.put("bootstrap.servers", "localhost:9092")
-    props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-    props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
 
     val producer = new KafkaProducer[String, String](props)
 
-    // Specify the topic
-    val topic = "topic name"
-
-    for (i <- 1 to 10) {
-      val record = new ProducerRecord[String, String](topic, s"key_$i", s"message_$i")
-      producer.send(record)
-      println(s"Sent message: key_$i -> message_$i")
+    try {
+      for (i <- 1 to 10) {
+        val record = new ProducerRecord[String, String](topic, s"key-$i", s"value-$i")
+        producer.send(record)
+        println(s"Produced: key-$i, value-$i")
+        Thread.sleep(500)
+      }
+    } finally {
+      producer.close()
     }
-
-    producer.close()
   }
-}
 
-object KafkaScalaConsumer {
-  def main(args: Array[String]): Unit = {
-
+  def runConsumer(topic: String): Unit = {
     val props = new Properties()
-    props.put("bootstrap.servers", "localhost:9092")
-    props.put("group.id", "scala-consumer-group")
-    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
-    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
+    props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
+    props.put(ConsumerConfig.GROUP_ID_CONFIG, "example-group")
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer")
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer")
+    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
 
     val consumer = new KafkaConsumer[String, String](props)
-
-    val topic = "your_topic_name"
     consumer.subscribe(Collections.singletonList(topic))
 
-    while (true) {
-      val records: ConsumerRecords[String, String] = consumer.poll(1000)
-      records.forEach { record =>
-        println(s"Received message: key = ${record.key()}, value = ${record.value()}")
+    try {
+      while (true) {
+        val records: ConsumerRecords[String, String] = consumer.poll(java.time.Duration.ofMillis(1000))
+        for (record <- records.asScala) {
+          println(s"Consumed: key=${record.key()}, value=${record.value()}, offset=${record.offset()}")
+        }
       }
+    } finally {
+      consumer.close()
     }
-
-    consumer.close()
   }
 }
 
-
-object Main {
-  def main(args: Array[String]): Unit = {
-    //IDK man
-  }
-}
